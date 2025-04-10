@@ -7,6 +7,7 @@ import (
 	"banco/utils"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -19,24 +20,29 @@ import (
 var validate = validator.New()
 
 type CustomerController struct {
-	DB            *gorm.DB
+	DB *gorm.DB
 }
 
 func (c *CustomerController) FindAllCustomers() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		var customers []models.Customer
 		var array []dto.FindCustomerDTO
-		result := c.DB.Preload("BankAccount").Find(&customers)
+		result := c.DB.Preload("BankAccount").Preload("Deposits").Find(&customers)
 		if result.Error != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 		}
 		array = funk.Map(customers, func(customer models.Customer) dto.FindCustomerDTO {
-			return dto.FindCustomerDTO{ID: customer.ID, Name: customer.Name, CreatedAt: customer.CreatedAt, UpdatedAt: customer.UpdatedAt, RoleUpdatedAt: customer.RoleUpdatedAt,
+			
+			
+			return dto.FindCustomerDTO{
+				ID: customer.ID, Name: customer.Name, CreatedAt: customer.CreatedAt, UpdatedAt: customer.UpdatedAt, RoleUpdatedAt: customer.RoleUpdatedAt,
+				Role: customer.Role,
 				BankAccount: dto.FindBankAccountDTO{
 					ID:         customer.BankAccount.ID,
 					CustomerID: customer.BankAccount.CustomerID,
 					Balance:    customer.BankAccount.Balance,
-				}}
+				},
+			}
 		}).([]dto.FindCustomerDTO)
 
 		return ctx.Status(200).JSON(array)
@@ -52,7 +58,9 @@ func (c *CustomerController) CreateCustomer() fiber.Handler {
 		if err := validate.Struct(input); err != nil {
 			return ctx.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		if strings.ToUpper(input.Name) == "OWNER" {
+			return ctx.Status(401).JSON(fiber.Map{"error": "you can't create a user with that name"})
+		}
 		customer := models.Customer{
 			Name:          input.Name,
 			Password:      input.Password,
@@ -138,15 +146,30 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 			}
 		}
+		var depositsDTO []dto.FindDepositDTO
+
+			if len(customer.Deposits) >= 1 {
+				depositsDTO = funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
+					return dto.FindDepositDTO{
+						ID: deposit.ID,
+						Amount: deposit.Amount,
+						CustomerID: deposit.CustomerID,
+						CreatedAt: deposit.CreatedAt,
+						UpdatedAt: deposit.UpdatedAt,
+					}
+				}).([]dto.FindDepositDTO)
+			}
 		customerDTO = dto.FindCustomerDTO{
-			ID: customer.ID,
-			Name: customer.Name,
-			CreatedAt: customer.CreatedAt,
-			UpdatedAt: customer.UpdatedAt,
+			ID:            customer.ID,
+			Name:          customer.Name,
+			CreatedAt:     customer.CreatedAt,
+			UpdatedAt:     customer.UpdatedAt,
 			RoleUpdatedAt: customer.RoleUpdatedAt,
+			Role: customer.Role,
+			Deposits: depositsDTO,
 			BankAccount: dto.FindBankAccountDTO{
-				ID: customer.BankAccount.ID,
-				Balance: customer.BankAccount.Balance,
+				ID:         customer.BankAccount.ID,
+				Balance:    customer.BankAccount.Balance,
 				CustomerID: customer.BankAccount.CustomerID,
 			},
 		}
@@ -154,3 +177,27 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 	}
 }
 
+func (c *CustomerController) ChangeCustomerRole() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		role := ctx.Params("role")
+		customerID := ctx.Params("id")
+		customerIdInt, err := strconv.Atoi(customerID)
+		if err != nil {
+			return ctx.Status(400).JSON(fiber.Map{"error": "id isn't valid"})
+		}
+		roleNumber, err := strconv.Atoi(role)
+		if err != nil {
+			return ctx.Status(400).JSON(fiber.Map{"error": "param isn't a number"})
+		}
+		if roleNumber == utils.OWNER || roleNumber <= 0 && roleNumber >= 3 {
+			return ctx.Status(400).JSON(fiber.Map{"error": "you can't give that role to a customer or that role isn't valid"})
+		}
+		
+		result := c.DB.Model(&models.Customer{}).Where("id = ?", customerIdInt).Update("role", roleNumber)
+		if result.Error != nil {
+			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
+		}
+
+		return ctx.Status(200).JSON(fiber.Map{"message": "customer was updated!"})
+	}
+}

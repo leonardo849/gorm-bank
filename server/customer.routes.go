@@ -15,5 +15,6 @@ func SetupCustomerRoutes(customerRoute fiber.Router) {
 	customerRoute.Post("/login", customerController.LoginCustomer())
 	customerRoute.Post("/create", customerController.CreateCustomer())
 	customerRoute.Get("/one/:id", middlewares.CheckJWTMiddleware(), customerController.FindOneCustomer())
+	customerRoute.Patch("/update/:role/:id", middlewares.CheckJWTMiddleware(), middlewares.CheckRole(), customerController.ChangeCustomerRole())
 	log.Println("Customer's routes are working!")
 }

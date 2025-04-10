@@ -18,6 +18,8 @@ func RunServer() error {
 		return c.Status(200).JSON(fiber.Map{"message": "hi!"})
 	})
 	customerGroup := app.Group("/customer")
+	depositGroup := app.Group("/deposit")
 	SetupCustomerRoutes(customerGroup)
+	SetupDepositRoutes(depositGroup)
 	return app.Listen(port)
 }

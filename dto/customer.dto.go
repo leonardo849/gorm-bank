@@ -1,6 +1,8 @@
 package dto
 
-import "time"
+import (
+	"time"
+)
 
 type CreateCustomerDTO struct {
 	Name     string `json:"name" validate:"required,min=3,max=100"`
@@ -15,8 +17,10 @@ type LoginCustomerDTO struct {
 type FindCustomerDTO struct {
 	ID            uint               `json:"id"`
 	Name          string             `json:"name"`
+	Role int `json:"role"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
 	RoleUpdatedAt time.Time          `json:"role_updated_at"`
 	BankAccount   FindBankAccountDTO `json:"bank_account"`
+	Deposits []FindDepositDTO `json:"deposits"`
 }
