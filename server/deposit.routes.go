@@ -11,6 +11,6 @@ import (
 
 func SetupDepositRoutes(depositRoute fiber.Router) {
 	depositController := controllers.DepositController{DB: database.DB}
-	depositRoute.Post("/create", middlewares.CheckJWTMiddleware(), depositController.CreateDeposit())
+	depositRoute.Post("/create", middlewares.CheckJWTMiddleware(), middlewares.CheckIfItIsOwner() , depositController.CreateDeposit())
 	log.Println("deposit's routes are working!")
 }

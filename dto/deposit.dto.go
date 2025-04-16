@@ -3,7 +3,7 @@ package dto
 import "time"
 
 type CreateDepositDTO struct {
-	Amount uint `json:"amount" validate:"required"`
+	Amount uint `json:"amount" validate:"required,min=1"`
 }
 
 type FindDepositDTO struct {

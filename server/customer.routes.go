@@ -11,7 +11,7 @@ import (
 
 func SetupCustomerRoutes(customerRoute fiber.Router) {
 	customerController := controllers.CustomerController{DB: database.DB}
-	customerRoute.Get("/all", middlewares.CheckJWTMiddleware(), middlewares.CheckRole(), customerController.FindAllCustomers())
+	customerRoute.Get("/all/:page/:page_size", middlewares.CheckJWTMiddleware(), middlewares.CheckRole(), customerController.FindAllCustomers())
 	customerRoute.Post("/login", customerController.LoginCustomer())
 	customerRoute.Post("/create", customerController.CreateCustomer())
 	customerRoute.Get("/one/:id", middlewares.CheckJWTMiddleware(), customerController.FindOneCustomer())

@@ -19,7 +19,9 @@ func RunServer() error {
 	})
 	customerGroup := app.Group("/customer")
 	depositGroup := app.Group("/deposit")
+	bankTransferGroup := app.Group("/bank-transfer")
 	SetupCustomerRoutes(customerGroup)
 	SetupDepositRoutes(depositGroup)
+	SetupBankTransferRoutes(bankTransferGroup)
 	return app.Listen(port)
 }

@@ -25,9 +25,20 @@ type CustomerController struct {
 
 func (c *CustomerController) FindAllCustomers() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		page := ctx.Params("page")
+		pageSize := ctx.Params("page_size")
+		pageInt, err := strconv.Atoi(page)
+		if err != nil {
+			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		pageSizeInt, err := strconv.Atoi(pageSize)
+		if err != nil {
+			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		offset := (pageInt - 1) * pageSizeInt
 		var customers []models.Customer
 		var array []dto.FindCustomerDTO
-		result := c.DB.Preload("BankAccount").Preload("Deposits").Find(&customers)
+		result := c.DB.Preload("BankAccount").Preload("Deposits").Limit(pageSizeInt).Offset(offset).Find(&customers)
 		if result.Error != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 		}
@@ -61,26 +72,33 @@ func (c *CustomerController) CreateCustomer() fiber.Handler {
 		if strings.ToUpper(input.Name) == "OWNER" {
 			return ctx.Status(401).JSON(fiber.Map{"error": "you can't create a user with that name"})
 		}
-		customer := models.Customer{
-			Name:          input.Name,
-			Password:      input.Password,
-			Role:          utils.CUSTOMER,
-			RoleUpdatedAt: time.Now(),
+		err := c.DB.Transaction(func(tx *gorm.DB) error {
+			customer := models.Customer{
+				Name:          input.Name,
+				Password:      input.Password,
+				Role:          utils.CUSTOMER,
+				RoleUpdatedAt: time.Now(),
+			}
+	
+			result := tx.Create(&customer)
+			if result.Error != nil {
+				return result.Error
+			}
+	
+			bankAccount := models.BankAccount{
+				CustomerID: customer.ID,
+				Balance:    0,
+			}
+			result = tx.Create(&bankAccount)
+			if result.Error != nil {
+				return result.Error
+			}
+			return nil
+		})
+		if err != nil {
+			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-
-		result := c.DB.Create(&customer)
-		if result.Error != nil {
-			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
-		}
-
-		bankAccount := models.BankAccount{
-			CustomerID: customer.ID,
-			Balance:    0,
-		}
-		result = c.DB.Create(&bankAccount)
-		if result.Error != nil {
-			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
-		}
+		
 
 		return ctx.Status(200).JSON(fiber.Map{"message": "customer was created"})
 	}
@@ -146,19 +164,19 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 			}
 		}
-		var depositsDTO []dto.FindDepositDTO
+		// var depositsDTO []dto.FindDepositDTO
 
-			if len(customer.Deposits) >= 1 {
-				depositsDTO = funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
-					return dto.FindDepositDTO{
-						ID: deposit.ID,
-						Amount: deposit.Amount,
-						CustomerID: deposit.CustomerID,
-						CreatedAt: deposit.CreatedAt,
-						UpdatedAt: deposit.UpdatedAt,
-					}
-				}).([]dto.FindDepositDTO)
-			}
+		// 	if len(customer.Deposits) >= 1 {
+		// 		depositsDTO = funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
+		// 			return dto.FindDepositDTO{
+		// 				ID: deposit.ID,
+		// 				Amount: deposit.Amount,
+		// 				CustomerID: deposit.CustomerID,
+		// 				CreatedAt: deposit.CreatedAt,
+		// 				UpdatedAt: deposit.UpdatedAt,
+		// 			}
+		// 		}).([]dto.FindDepositDTO)
+		// 	}
 		customerDTO = dto.FindCustomerDTO{
 			ID:            customer.ID,
 			Name:          customer.Name,
@@ -166,7 +184,7 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 			UpdatedAt:     customer.UpdatedAt,
 			RoleUpdatedAt: customer.RoleUpdatedAt,
 			Role: customer.Role,
-			Deposits: depositsDTO,
+			Deposits: nil,
 			BankAccount: dto.FindBankAccountDTO{
 				ID:         customer.BankAccount.ID,
 				Balance:    customer.BankAccount.Balance,
