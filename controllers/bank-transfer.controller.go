@@ -113,6 +113,7 @@ func (b *BankTransferController) FindAllTransfers() fiber.Handler {
 				Amount: transfer.Amount,
 				ReceiverID: transfer.ReceiverID,
 				SenderID: transfer.SenderID,
+				
 			}
 		}).([]dto.FindBankTransferDTO)
 		return ctx.Status(200).JSON(mapped)

@@ -43,8 +43,7 @@ func (c *CustomerController) FindAllCustomers() fiber.Handler {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 		}
 		array = funk.Map(customers, func(customer models.Customer) dto.FindCustomerDTO {
-			
-			
+
 			return dto.FindCustomerDTO{
 				ID: customer.ID, Name: customer.Name, CreatedAt: customer.CreatedAt, UpdatedAt: customer.UpdatedAt, RoleUpdatedAt: customer.RoleUpdatedAt,
 				Role: customer.Role,
@@ -79,12 +78,12 @@ func (c *CustomerController) CreateCustomer() fiber.Handler {
 				Role:          utils.CUSTOMER,
 				RoleUpdatedAt: time.Now(),
 			}
-	
+
 			result := tx.Create(&customer)
 			if result.Error != nil {
 				return result.Error
 			}
-	
+
 			bankAccount := models.BankAccount{
 				CustomerID: customer.ID,
 				Balance:    0,
@@ -98,7 +97,6 @@ func (c *CustomerController) CreateCustomer() fiber.Handler {
 		if err != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		
 
 		return ctx.Status(200).JSON(fiber.Map{"message": "customer was created"})
 	}
@@ -156,7 +154,7 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(400).JSON(fiber.Map{"error": "the ID isn't a number"})
 			}
 		}
-		result := c.DB.Preload("BankAccount").First(&customer, searchedID)
+		result := c.DB.Preload("BankAccount").Preload("SentTransfers").Preload("ReceivedTransfers").Preload("Deposits").First(&customer, searchedID)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return ctx.Status(404).JSON(fiber.Map{"error": "the customer doesn't exist"})
@@ -164,32 +162,50 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 			}
 		}
-		// var depositsDTO []dto.FindDepositDTO
 
-		// 	if len(customer.Deposits) >= 1 {
-		// 		depositsDTO = funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
-		// 			return dto.FindDepositDTO{
-		// 				ID: deposit.ID,
-		// 				Amount: deposit.Amount,
-		// 				CustomerID: deposit.CustomerID,
-		// 				CreatedAt: deposit.CreatedAt,
-		// 				UpdatedAt: deposit.UpdatedAt,
-		// 			}
-		// 		}).([]dto.FindDepositDTO)
-		// 	}
+		depositsDTO := funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
+			return dto.FindDepositDTO{
+				ID:         deposit.ID,
+				Amount:     deposit.Amount,
+				CustomerID: deposit.CustomerID,
+				CreatedAt:  deposit.CreatedAt,
+				UpdatedAt:  deposit.UpdatedAt,
+			}
+		}).([]dto.FindDepositDTO)
+		
+		SentTransfers := funk.Map(customer.SentTransfers, func(sentTransfer models.BankTransfer) dto.FindBankTransferDTO {
+			return dto.FindBankTransferDTO{
+				ID: sentTransfer.ID,
+				Amount: sentTransfer.Amount,
+				ReceiverID: sentTransfer.ReceiverID,
+				SenderID: sentTransfer.SenderID,
+			}
+		}).([]dto.FindBankTransferDTO)
+
+		ReceivedTransfers := funk.Map(customer.ReceivedTransfers, func(receivedTransfer models.BankTransfer) dto.FindBankTransferDTO {
+			return dto.FindBankTransferDTO{
+				ID: receivedTransfer.ID,
+				Amount: receivedTransfer.Amount,
+				ReceiverID: receivedTransfer.ReceiverID,
+				SenderID: receivedTransfer.SenderID,
+			}
+		}).([]dto.FindBankTransferDTO)
+
 		customerDTO = dto.FindCustomerDTO{
 			ID:            customer.ID,
 			Name:          customer.Name,
 			CreatedAt:     customer.CreatedAt,
 			UpdatedAt:     customer.UpdatedAt,
 			RoleUpdatedAt: customer.RoleUpdatedAt,
-			Role: customer.Role,
-			Deposits: nil,
+			Role:          customer.Role,
+			Deposits:      depositsDTO,
 			BankAccount: dto.FindBankAccountDTO{
 				ID:         customer.BankAccount.ID,
 				Balance:    customer.BankAccount.Balance,
 				CustomerID: customer.BankAccount.CustomerID,
 			},
+			SentTransfers: SentTransfers,
+			ReceivedTransfers: ReceivedTransfers,
 		}
 		return ctx.Status(200).JSON(customerDTO)
 	}
@@ -210,7 +226,7 @@ func (c *CustomerController) ChangeCustomerRole() fiber.Handler {
 		if roleNumber == utils.OWNER || roleNumber <= 0 && roleNumber >= 3 {
 			return ctx.Status(400).JSON(fiber.Map{"error": "you can't give that role to a customer or that role isn't valid"})
 		}
-		
+
 		result := c.DB.Model(&models.Customer{}).Where("id = ?", customerIdInt).Update("role", roleNumber)
 		if result.Error != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
