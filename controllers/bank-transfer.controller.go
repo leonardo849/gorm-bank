@@ -18,7 +18,7 @@ type BankTransferController struct {
 func (b *BankTransferController) CreateTransfer() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		var input dto.CreateBankTransferDTO
-		var receiver models.Customer
+		var receiverAccount models.BankAccount
 		var sender models.Customer
 		claims := ctx.Locals("customer").(jwt.MapClaims)
 		IdTokenFloat := claims["ID"].(float64)
@@ -39,10 +39,10 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 			}
 		}
 
-		result = b.DB.Preload("BankAccount").First(&receiver, input.ReceiverID)
+		result = b.DB.First(&receiverAccount, input.ReceiverBankAccountID)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				return ctx.Status(404).JSON(fiber.Map{"error": "receiver wasn't found"})
+				return ctx.Status(404).JSON(fiber.Map{"error": "receiver account wasn't found"})
 			} else {
 				return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 			}
@@ -51,22 +51,15 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 		if sender.BankAccount.Balance < input.Amount {
 			return ctx.Status(401).JSON(fiber.Map{"error": "you don't have enough money"})
 		}
-		
 
 		err := b.DB.Transaction(func(tx *gorm.DB) error {
-			var sender models.Customer
-			var receiver models.Customer
 
 			if err := tx.Preload("BankAccount").First(&sender, IdTokenUint).Error; err != nil {
 				return err
 			}
-			if err := tx.Preload("BankAccount").First(&receiver, input.ReceiverID).Error; err != nil {
-				return err
-			}
-
-			if sender.BankAccount.Balance < input.Amount {
-				return fiber.NewError(fiber.StatusUnauthorized, "you don't have enough money")
-			}
+			// if err := tx.Preload("BankAccount").First(&receiver, input.ReceiverID).Error; err != nil {
+			// 	return err
+			// }
 
 			if err := tx.Model(&models.BankAccount{}).
 				Where("customer_id = ?", sender.ID).
@@ -75,15 +68,15 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 			}
 
 			if err := tx.Model(&models.BankAccount{}).
-				Where("customer_id = ?", receiver.ID).
+				Where("customer_id = ?", receiverAccount.CustomerID).
 				Update("balance", gorm.Expr("balance + ?", input.Amount)).Error; err != nil {
 				return err
 			}
 
 			transfer := models.BankTransfer{
-				Amount:     input.Amount,
-				ReceiverID: receiver.ID,
-				SenderID:   sender.ID,
+				Amount:                input.Amount,
+				ReceiverBankAccountID: input.ReceiverBankAccountID,
+				SenderBankAccountID:   sender.BankAccount.ID,
 			}
 			if err := tx.Create(&transfer).Error; err != nil {
 				return err
@@ -95,7 +88,7 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 		if err != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		
+
 		return ctx.Status(200).JSON(fiber.Map{"message": "transfer was created!"})
 	}
 }
@@ -109,11 +102,10 @@ func (b *BankTransferController) FindAllTransfers() fiber.Handler {
 		}
 		mapped := funk.Map(transfers, func(transfer models.BankTransfer) dto.FindBankTransferDTO {
 			return dto.FindBankTransferDTO{
-				ID: transfer.ID,
-				Amount: transfer.Amount,
-				ReceiverID: transfer.ReceiverID,
-				SenderID: transfer.SenderID,
-				
+				ID:                    transfer.ID,
+				Amount:                transfer.Amount,
+				ReceiverBankAccountID: transfer.ReceiverBankAccountID,
+				SenderBankAccountID: transfer.SenderBankAccountID,
 			}
 		}).([]dto.FindBankTransferDTO)
 		return ctx.Status(200).JSON(mapped)

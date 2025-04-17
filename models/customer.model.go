@@ -13,9 +13,6 @@ type Customer struct {
 	Password    string      `json:"password" gorm:"<-:create"`
 	BankAccount BankAccount `json:"bank_account" gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE;"`
 	Deposits    []Deposit   `gorm:"foreignKey:CustomerID;"`
-	SentTransfers []BankTransfer `gorm:"foreignKey:SenderID"`
-	ReceivedTransfers []BankTransfer `gorm:"foreignKey:ReceiverID"`
-	Loan *Loan `json:"loan" gorm:"foreignKey:CustomerID;constraint:OnDelete:CASCADE;"`
 	Role int `json:"role"`
 	RoleUpdatedAt time.Time `json:"role_updated_at"`
 }

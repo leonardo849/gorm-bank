@@ -51,7 +51,11 @@ func (c *CustomerController) FindAllCustomers() fiber.Handler {
 					ID:         customer.BankAccount.ID,
 					CustomerID: customer.BankAccount.CustomerID,
 					Balance:    customer.BankAccount.Balance,
+					SentTransfers: nil,
+					ReceivedTransfers: nil,
 				},
+				Deposits: nil,
+
 			}
 		}).([]dto.FindCustomerDTO)
 
@@ -154,7 +158,7 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(400).JSON(fiber.Map{"error": "the ID isn't a number"})
 			}
 		}
-		result := c.DB.Preload("BankAccount").Preload("SentTransfers").Preload("ReceivedTransfers").Preload("Deposits").First(&customer, searchedID)
+		result := c.DB.Preload("BankAccount.SentTransfers").Preload("BankAccount.ReceivedTransfers").Preload("Deposits").First(&customer, searchedID)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return ctx.Status(404).JSON(fiber.Map{"error": "the customer doesn't exist"})
@@ -172,24 +176,26 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				UpdatedAt:  deposit.UpdatedAt,
 			}
 		}).([]dto.FindDepositDTO)
-		
-		SentTransfers := funk.Map(customer.SentTransfers, func(sentTransfer models.BankTransfer) dto.FindBankTransferDTO {
+
+		sentTransfersDTO := funk.Map(customer.BankAccount.SentTransfers, func(sentTransfer models.BankTransfer) dto.FindBankTransferDTO {
 			return dto.FindBankTransferDTO{
 				ID: sentTransfer.ID,
 				Amount: sentTransfer.Amount,
-				ReceiverID: sentTransfer.ReceiverID,
-				SenderID: sentTransfer.SenderID,
+				ReceiverBankAccountID: sentTransfer.ReceiverBankAccountID,
+				SenderBankAccountID: sentTransfer.SenderBankAccountID,
 			}
 		}).([]dto.FindBankTransferDTO)
 
-		ReceivedTransfers := funk.Map(customer.ReceivedTransfers, func(receivedTransfer models.BankTransfer) dto.FindBankTransferDTO {
+		receivedTransfersDTO := funk.Map(customer.BankAccount.ReceivedTransfers, func(receivedTransfer models.BankTransfer) dto.FindBankTransferDTO {
 			return dto.FindBankTransferDTO{
 				ID: receivedTransfer.ID,
 				Amount: receivedTransfer.Amount,
-				ReceiverID: receivedTransfer.ReceiverID,
-				SenderID: receivedTransfer.SenderID,
+				ReceiverBankAccountID: receivedTransfer.ReceiverBankAccountID,
+				SenderBankAccountID: receivedTransfer.SenderBankAccountID,
 			}
 		}).([]dto.FindBankTransferDTO)
+
+	
 
 		customerDTO = dto.FindCustomerDTO{
 			ID:            customer.ID,
@@ -203,9 +209,9 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				ID:         customer.BankAccount.ID,
 				Balance:    customer.BankAccount.Balance,
 				CustomerID: customer.BankAccount.CustomerID,
+				SentTransfers: sentTransfersDTO,
+				ReceivedTransfers: receivedTransfersDTO,
 			},
-			SentTransfers: SentTransfers,
-			ReceivedTransfers: ReceivedTransfers,
 		}
 		return ctx.Status(200).JSON(customerDTO)
 	}
@@ -233,5 +239,49 @@ func (c *CustomerController) ChangeCustomerRole() fiber.Handler {
 		}
 
 		return ctx.Status(200).JSON(fiber.Map{"message": "customer was updated!"})
+	}
+}
+
+func (c *CustomerController) DeleteCustomer() fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		claims := ctx.Locals("customer").(jwt.MapClaims)
+		role := claims["role"].(float64)
+		var searchedID int
+		var searchedCustomer models.Customer
+		var err error
+		if funk.Contains([2]int{utils.MANAGER, utils.OWNER}, int(role)) {
+			idParam := ctx.Params("id")
+			searchedID, err = strconv.Atoi(idParam)
+			if err != nil {
+				return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+		} else {
+			idReq := claims["ID"].(float64)
+			searchedID = int(idReq)
+		}
+
+		if int((claims["ID"].(float64))) == searchedID && int(role) == utils.OWNER {
+			return ctx.Status(500).JSON(fiber.Map{"error": "what a fuck is that bro?"})
+		}
+
+		result := c.DB.Preload("BankAccount").First(&searchedCustomer, searchedID)
+		if result.Error != nil {
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				return ctx.Status(500).JSON(fiber.Map{"error": "that customer doesn't exist"})
+			} else {
+				return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
+			}
+		}
+
+		if searchedCustomer.BankAccount.Balance > 0 {
+			return ctx.Status(401).JSON(fiber.Map{"error": "that bank account has balance"})
+		}
+
+
+		result = c.DB.Delete(&searchedCustomer)
+		if result.Error != nil {
+			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
+		}
+		return ctx.Status(200).JSON(fiber.Map{"message": "customer was deleted!"})
 	}
 }

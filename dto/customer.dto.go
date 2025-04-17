@@ -23,7 +23,4 @@ type FindCustomerDTO struct {
 	RoleUpdatedAt time.Time          `json:"role_updated_at"`
 	BankAccount   FindBankAccountDTO `json:"bank_account"`
 	Deposits      []FindDepositDTO   `json:"deposits"`
-	SentTransfers []FindBankTransferDTO `json:"sent_transfers"`
-	ReceivedTransfers []FindBankTransferDTO `json:"received_transfers"`
-
 }

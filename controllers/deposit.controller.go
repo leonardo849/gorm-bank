@@ -48,15 +48,16 @@ func (d *DepositController) CreateDeposit() fiber.Handler {
 				CustomerID: IDuint,
 				Amount: input.Amount,
 			}
+			
+			result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", customer.ID).Update("balance", gorm.Expr("balance + ?", input.Amount))
+			if result.Error != nil {
+				return result.Error
+			}
+			result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", owner.ID).Update("balance", gorm.Expr("balance + ?", amountToTheBank))
+			if result.Error != nil {
+				return result.Error
+			}
 			result = tx.Create(&deposit)
-			if result.Error != nil {
-				return result.Error
-			}
-			result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", customer.ID).Update("balance", int(input.Amount) + int(customer.BankAccount.Balance))
-			if result.Error != nil {
-				return result.Error
-			}
-			result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", owner.ID).Update("balance", int(owner.BankAccount.Balance) + int(amountToTheBank))
 			if result.Error != nil {
 				return result.Error
 			}
