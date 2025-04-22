@@ -38,12 +38,11 @@ func (c *CustomerController) FindAllCustomers() fiber.Handler {
 		offset := (pageInt - 1) * pageSizeInt
 		var customers []models.Customer
 		var array []dto.FindCustomerDTO
-		result := c.DB.Preload("BankAccount").Preload("Deposits").Limit(pageSizeInt).Offset(offset).Find(&customers)
+		result := c.DB.Preload("BankAccount").Limit(pageSizeInt).Offset(offset).Find(&customers)
 		if result.Error != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 		}
 		array = funk.Map(customers, func(customer models.Customer) dto.FindCustomerDTO {
-
 			return dto.FindCustomerDTO{
 				ID: customer.ID, Name: customer.Name, CreatedAt: customer.CreatedAt, UpdatedAt: customer.UpdatedAt, RoleUpdatedAt: customer.RoleUpdatedAt,
 				Role: customer.Role,
@@ -53,9 +52,10 @@ func (c *CustomerController) FindAllCustomers() fiber.Handler {
 					Balance:    customer.BankAccount.Balance,
 					SentTransfers: nil,
 					ReceivedTransfers: nil,
+					Loan: nil,
+					Deposits: nil,
+					Withdrawals: nil,
 				},
-				Deposits: nil,
-
 			}
 		}).([]dto.FindCustomerDTO)
 
@@ -117,7 +117,7 @@ func (c *CustomerController) LoginCustomer() fiber.Handler {
 			return ctx.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		result := c.DB.First(&customer, "name = ?", input.Name)
+		result := c.DB.Preload("BankAccount").First(&customer, "name = ?", input.Name)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return ctx.Status(404).JSON(fiber.Map{"error": "that customer doesn't exist"})
@@ -129,7 +129,7 @@ func (c *CustomerController) LoginCustomer() fiber.Handler {
 		if !comparePassword {
 			return ctx.Status(401).JSON(fiber.Map{"error": "password is wrong"})
 		}
-		jwtToken, err := functionscrypto.GenerateJWT(customer.ID, utils.Role(customer.Role), customer.RoleUpdatedAt)
+		jwtToken, err := functionscrypto.GenerateJWT(customer.ID, customer.Role, customer.RoleUpdatedAt, customer.BankAccount.ID)
 		if err != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -158,7 +158,7 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				return ctx.Status(400).JSON(fiber.Map{"error": "the ID isn't a number"})
 			}
 		}
-		result := c.DB.Preload("BankAccount.SentTransfers").Preload("BankAccount.ReceivedTransfers").Preload("Deposits").First(&customer, searchedID)
+		result := c.DB.Preload("BankAccount.SentTransfers").Preload("BankAccount.ReceivedTransfers").Preload("BankAccount.Deposits").Preload("BankAccount.Loan").Preload("BankAccount.Withdrawals").First(&customer, searchedID)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return ctx.Status(404).JSON(fiber.Map{"error": "the customer doesn't exist"})
@@ -167,13 +167,12 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 			}
 		}
 
-		depositsDTO := funk.Map(customer.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
+		depositsDTO := funk.Map(customer.BankAccount.Deposits, func(deposit models.Deposit) dto.FindDepositDTO {
 			return dto.FindDepositDTO{
 				ID:         deposit.ID,
 				Amount:     deposit.Amount,
-				CustomerID: deposit.CustomerID,
+				BankAccountID: deposit.BankAccountID,
 				CreatedAt:  deposit.CreatedAt,
-				UpdatedAt:  deposit.UpdatedAt,
 			}
 		}).([]dto.FindDepositDTO)
 
@@ -183,6 +182,7 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				Amount: sentTransfer.Amount,
 				ReceiverBankAccountID: sentTransfer.ReceiverBankAccountID,
 				SenderBankAccountID: sentTransfer.SenderBankAccountID,
+				CreatedAt: sentTransfer.CreatedAt,
 			}
 		}).([]dto.FindBankTransferDTO)
 
@@ -192,10 +192,32 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 				Amount: receivedTransfer.Amount,
 				ReceiverBankAccountID: receivedTransfer.ReceiverBankAccountID,
 				SenderBankAccountID: receivedTransfer.SenderBankAccountID,
+				CreatedAt: receivedTransfer.CreatedAt,
 			}
 		}).([]dto.FindBankTransferDTO)
 
-	
+		withdrawalsDTO := funk.Map(customer.BankAccount.Withdrawals, func(withdraw models.Withdraw) dto.FindWithdrawDTO {
+			return dto.FindWithdrawDTO{
+				ID: withdraw.ID,
+				Amount: withdraw.Amount,
+				BankAccountID: withdraw.BankAccountID,
+				CreatedAt: withdraw.CreatedAt,
+			}
+		}).([]dto.FindWithdrawDTO)
+
+		
+
+		findLoanDTO := dto.FindLoanDTO{
+			ID: customer.BankAccount.Loan.ID,
+			Amount: customer.BankAccount.Loan.BaseAmount,
+			TotalAmount: customer.BankAccount.Loan.TotalAmount,
+			InterestRate: customer.BankAccount.Loan.InterestRate,
+			CreatedAt: customer.BankAccount.Loan.CreatedAt,
+			MaturityDate: customer.BankAccount.Loan.MaturityDate,
+		}
+
+
+		
 
 		customerDTO = dto.FindCustomerDTO{
 			ID:            customer.ID,
@@ -204,13 +226,15 @@ func (c *CustomerController) FindOneCustomer() fiber.Handler {
 			UpdatedAt:     customer.UpdatedAt,
 			RoleUpdatedAt: customer.RoleUpdatedAt,
 			Role:          customer.Role,
-			Deposits:      depositsDTO,
 			BankAccount: dto.FindBankAccountDTO{
 				ID:         customer.BankAccount.ID,
 				Balance:    customer.BankAccount.Balance,
 				CustomerID: customer.BankAccount.CustomerID,
 				SentTransfers: sentTransfersDTO,
 				ReceivedTransfers: receivedTransfersDTO,
+				Loan: &findLoanDTO,
+				Deposits:      depositsDTO,
+				Withdrawals: withdrawalsDTO,
 			},
 		}
 		return ctx.Status(200).JSON(customerDTO)
@@ -233,7 +257,10 @@ func (c *CustomerController) ChangeCustomerRole() fiber.Handler {
 			return ctx.Status(400).JSON(fiber.Map{"error": "you can't give that role to a customer or that role isn't valid"})
 		}
 
-		result := c.DB.Model(&models.Customer{}).Where("id = ?", customerIdInt).Update("role", roleNumber)
+		result := c.DB.Model(&models.Customer{}).Where("id = ?", customerIdInt).Updates(map[string]interface{}{
+			"role": roleNumber,
+			"role_updated_at": time.Now(),
+		})
 		if result.Error != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": result.Error.Error()})
 		}
@@ -260,9 +287,6 @@ func (c *CustomerController) DeleteCustomer() fiber.Handler {
 			searchedID = int(idReq)
 		}
 
-		if int((claims["ID"].(float64))) == searchedID && int(role) == utils.OWNER {
-			return ctx.Status(500).JSON(fiber.Map{"error": "what a fuck is that bro?"})
-		}
 
 		result := c.DB.Preload("BankAccount").First(&searchedCustomer, searchedID)
 		if result.Error != nil {

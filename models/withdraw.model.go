@@ -2,8 +2,9 @@ package models
 
 import "gorm.io/gorm"
 
-type Deposit struct {
+type Withdraw struct {
 	gorm.Model
 	BankAccountID uint `json:"bank-account_id"`
 	Amount uint `json:"amount"`
+	
 }

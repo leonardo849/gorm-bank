@@ -9,7 +9,6 @@ type CreateDepositDTO struct {
 type FindDepositDTO struct {
 	ID uint `json:"id"`
 	Amount     uint      `json:"amount"`
-	CustomerID uint      `json:"customer_id"`
+	BankAccountID uint      `json:"bank-account_id"`
 	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
 }

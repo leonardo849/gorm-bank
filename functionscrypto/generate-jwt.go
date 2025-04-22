@@ -1,19 +1,19 @@
 package functionscrypto
 
 import (
-	"banco/utils"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func GenerateJWT(customerID uint, role utils.Role, roleUpdatedAt time.Time) (string, error) {
+func GenerateJWT(customerID uint, role int, roleUpdatedAt time.Time, bankAccountID uint) (string, error) {
 	claims := jwt.MapClaims{
 		"ID":   customerID,
+		"bank-account_id": bankAccountID, 
 		"role": role,
 		"role_updated_at": roleUpdatedAt.Unix(),
-		"exp":  time.Now().Add(time.Hour * 24).Unix(),
+		"exp":  time.Now().Add(time.Hour * 72).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

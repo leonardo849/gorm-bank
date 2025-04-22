@@ -39,7 +39,7 @@ func ConnectToDatabase() (*gorm.DB, error) {
 }
 
 func migrateModels(db *gorm.DB) error {
-	err := db.AutoMigrate(&models.Customer{}, &models.BankAccount{}, &models.Deposit{}, &models.Loan{}, &models.BankTransfer{})
+	err := db.AutoMigrate(&models.Customer{}, &models.BankAccount{}, &models.Deposit{}, &models.Loan{}, &models.BankTransfer{}, &models.Withdraw{})
 	if err != nil {
 		return err
 	}

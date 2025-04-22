@@ -22,7 +22,6 @@ func (d *DepositController) CreateDeposit() fiber.Handler {
 		var deposit models.Deposit
 		var input dto.CreateDepositDTO
 		var customer models.Customer
-		var owner models.Customer
 		claims := ctx.Locals("customer").(jwt.MapClaims)
 		IDfloat := claims["ID"].(float64)
 		if err := ctx.BodyParser(&input); err != nil {
@@ -43,9 +42,8 @@ func (d *DepositController) CreateDeposit() fiber.Handler {
 			}
 		err := d.DB.Transaction(func(tx *gorm.DB) error {
 			
-			tx.Model(&models.Customer{}).Preload("BankAccount").First(&owner, "name = ?", "OWNER")
 			deposit = models.Deposit{
-				CustomerID: IDuint,
+				BankAccountID: customer.BankAccount.ID,
 				Amount: input.Amount,
 			}
 			
@@ -53,7 +51,7 @@ func (d *DepositController) CreateDeposit() fiber.Handler {
 			if result.Error != nil {
 				return result.Error
 			}
-			result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", owner.ID).Update("balance", gorm.Expr("balance + ?", amountToTheBank))
+			result = tx.Model(&models.BankAccount{}).Where("id = ?", 1).Update("balance", gorm.Expr("balance + ?", amountToTheBank))
 			if result.Error != nil {
 				return result.Error
 			}
