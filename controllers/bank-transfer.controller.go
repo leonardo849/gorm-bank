@@ -30,7 +30,7 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 			return ctx.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		result := b.DB.Preload("BankAccount").First(&sender, IdTokenUint)
+		result := b.DB.Preload("BankAccount.Loan").First(&sender, IdTokenUint)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				return ctx.Status(404).JSON(fiber.Map{"error": "sender wasn't found"})
@@ -48,8 +48,8 @@ func (b *BankTransferController) CreateTransfer() fiber.Handler {
 			}
 		}
 
-		if sender.BankAccount.Balance < input.Amount {
-			return ctx.Status(401).JSON(fiber.Map{"error": "you don't have enough money"})
+		if sender.BankAccount.Balance < input.Amount || sender.BankAccount.Loan.ID != 0 && sender.BankAccount.Balance - input.Amount < sender.BankAccount.Loan.TotalAmount {
+			return ctx.Status(401).JSON(fiber.Map{"error": "you don't have enough money or your balance will be less than your loan's total amount"})
 		}
 
 		err := b.DB.Transaction(func(tx *gorm.DB) error {

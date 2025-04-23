@@ -40,7 +40,7 @@ func RunServer() error {
 
 
 func startLoanChecker(db *gorm.DB) {
-	ticker := time.NewTicker(20 * time.Minute)
+	ticker := time.NewTicker(24 * time.Hour)
 
 	go func() {
 		for {
@@ -61,19 +61,17 @@ func checkOverdueLoans(db *gorm.DB) {
 	if len(overdueLoans) > 0 {
 		var customer models.Customer
 		var bankAccount models.BankAccount
-
-		var owner models.Customer
+		
 		log.Println("there are overdue loans")
 		for _, loan := range overdueLoans {
 			db.Model(&models.BankAccount{}).Preload("Loan").First(&bankAccount, loan.BankAccountID)
 			db.Model(&models.Customer{}).First(&customer, bankAccount.CustomerID)
-			db.Model(&models.Customer{}).Preload("BankAccount").First(&owner, "name = ?", "OWNER")
 			err := db.Transaction(func(tx *gorm.DB) error {
 				result := tx.Model(&models.BankAccount{}).Where("id = ?", bankAccount.ID).Update("balance", gorm.Expr("balance - ?", loan.TotalAmount))
 				if result.Error != nil {
 					return result.Error
 				}
-				result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", owner.ID).Update("balance", gorm.Expr("balance + ?", loan.TotalAmount))
+				result = tx.Model(&models.BankAccount{}).Where("customer_id = ?", 1).Update("balance", gorm.Expr("balance + ?", loan.TotalAmount))
 				if result.Error != nil {
 					return result.Error
 				}
